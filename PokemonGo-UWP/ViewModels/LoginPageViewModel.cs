@@ -132,9 +132,7 @@ namespace PokemonGo_UWP.ViewModels
                     if (!loginSuccess)
                     {
                         // Login failed, show a message
-                        await
-                            new MessageDialog(Resources.CodeResources.GetString("WrongUsernameText"))
-                                .ShowAsyncQueue();
+                        await new MessageDialog(Resources.CodeResources.GetString("WrongUsernameText")).ShowAsyncQueue();
                     }
                     else
                     {
@@ -148,25 +146,13 @@ namespace PokemonGo_UWP.ViewModels
                 }
                 catch (LoginFailedException e)
                 {
-                    var errorMessage = Resources.CodeResources.GetString("LoginFailedText");
-
-                    try
-                    {
-                        var result = e.GetLoginResponseContentAsString();
-                        var json = JObject.Parse(result.Result);
-                        var token = json.SelectToken("$.errors[0]");
-                        if (token != null)
-                            errorMessage = token.ToString();
-                    }
-                    catch
-                    {
-                    }
-
+                    var errorMessage = e.LoginResponse ?? Resources.CodeResources.GetString("LoginFailedText");
                     await new MessageDialog(errorMessage).ShowAsyncQueue();
                 }
                 catch (Exception e)
                 {
-                    HockeyClient.Current.TrackEvent(e.Message);
+								await ExceptionHandler.HandleException(e);
+								HockeyClient.Current.TrackEvent(e.Message);
                 }
                 finally
                 {

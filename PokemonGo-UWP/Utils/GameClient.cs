@@ -247,15 +247,9 @@ namespace PokemonGo_UWP.Utils
             new ObservableCollection<ItemData>();
 
         /// <summary>
-        ///     Stores free Incubators in the current inventory
+        ///     Stores Incubators in the current inventory
         /// </summary>
-        public static ObservableCollection<EggIncubator> FreeIncubatorsInventory { get; set; } =
-            new ObservableCollection<EggIncubator>();
-
-        /// <summary>
-        ///     Stores used Incubators in the current inventory
-        /// </summary>
-        public static ObservableCollection<EggIncubator> UsedIncubatorsInventory { get; set; } =
+        public static ObservableCollection<EggIncubator> IncubatorsInventory { get; set; } =
             new ObservableCollection<EggIncubator>();
 
         /// <summary>
@@ -536,7 +530,7 @@ namespace PokemonGo_UWP.Utils
             SettingsService.Instance.MapAutomaticOrientationMode = SettingsService.Instance.MapAutomaticOrientationMode;
 			#endregion
       Busy.SetBusy(true, Resources.CodeResources.GetString("GettingGpsSignalText"));
-			LocationServiceHelper.Instance.InitializeAsync();
+			await LocationServiceHelper.Instance.InitializeAsync();
 			LocationServiceHelper.Instance.PropertyChanged += LocationHelperPropertyChanged;
 			// Before starting we need game settings
 			GameSetting =
@@ -553,7 +547,8 @@ namespace PokemonGo_UWP.Utils
             //await UpdateMapObjects();
             await UpdateInventory();
             await UpdateItemTemplates();
-            Busy.SetBusy(false);
+            if(PlayerProfile != null && PlayerStats != null)
+                Busy.SetBusy(false);
         }
 
 		private static async void LocationHelperPropertyChanged(object sender, PropertyChangedEventArgs e)
@@ -657,10 +652,11 @@ namespace PokemonGo_UWP.Utils
                             currentPokemon.PokemonId, hatchedEggResponse.StardustAwarded[i], hatchedEggResponse.CandyAwarded[i],
                             hatchedEggResponse.ExperienceAwarded[i])).ShowAsyncQueue();
 
-                    NavigationHelper.NavigationState["CurrentPokemon"] =
-                        new PokemonDataWrapper(currentPokemon);
-                    BootStrapper.Current.NavigationService.Navigate(typeof(PokemonDetailPage));
-
+                    BootStrapper.Current.NavigationService.Navigate(typeof(PokemonDetailPage), new SelectedPokemonNavModel()
+                    {
+                        SelectedPokemonId = currentPokemon.PokemonId.ToString(),
+                        ViewMode = PokemonDetailPageViewMode.ReceivedPokemon
+                    });
                 }
             }
         }
@@ -746,14 +742,18 @@ namespace PokemonGo_UWP.Utils
                 InventoryDelta.InventoryItems.First(item => item.InventoryItemData.PlayerStats != null)
                     .InventoryItemData.PlayerStats;
 
-            if (checkForLevelUp && ((PlayerStats == null) || (PlayerStats != null && PlayerStats.Level != tmpStats.Level)))
+            if (checkForLevelUp && (PlayerStats == null || PlayerStats.Level != tmpStats.Level))
             {
                 PlayerStats = tmpStats;
                 var levelUpResponse = await GetLevelUpRewards(tmpStats.Level);
                 await UpdateInventory();
+                // Set busy to false because initial loading may have left it going until we had PlayerStats
+                Busy.SetBusy(false);
                 return levelUpResponse;
             }
             PlayerStats = tmpStats;
+            // Set busy to false because initial loading may have left it going until we had PlayerStats
+            Busy.SetBusy(false);
             return null;
         }
 
@@ -843,12 +843,9 @@ namespace PokemonGo_UWP.Utils
                     .Select(item => item.First().InventoryItemData.Item), true);
 
             // Update incbuators
-            FreeIncubatorsInventory.AddRange(fullInventory.Where(item => item.InventoryItemData.EggIncubators != null)
+            IncubatorsInventory.AddRange(fullInventory.Where(item => item.InventoryItemData.EggIncubators != null)
                 .SelectMany(item => item.InventoryItemData.EggIncubators.EggIncubator)
-                .Where(item => item != null && item.PokemonId == 0), true);
-            UsedIncubatorsInventory.AddRange(fullInventory.Where(item => item.InventoryItemData.EggIncubators != null)
-                .SelectMany(item => item.InventoryItemData.EggIncubators.EggIncubator)
-                .Where(item => item != null && item.PokemonId != 0), true);
+                .Where(item => item != null), true);
 
             // Update Pokedex
             PokedexInventory.AddRange(fullInventory.Where(item => item.InventoryItemData.PokedexEntry != null)
@@ -1028,6 +1025,10 @@ namespace PokemonGo_UWP.Utils
             return await _client.Fort.SearchFort(pokestopId, latitude, longitude);
         }
 
+        public static async Task<AddFortModifierResponse> AddFortModifier(string pokestopId, ItemId modifierType)
+        {
+            return await _client.Fort.AddFortModifier(pokestopId, modifierType);
+        }
         #endregion
 
         #region Gym Handling
@@ -1087,7 +1088,7 @@ namespace PokemonGo_UWP.Utils
         /// <returns></returns>
         public static EggIncubator GetIncubatorFromEgg(PokemonData egg)
         {
-            return UsedIncubatorsInventory.First(item => item.Id.Equals(egg.EggIncubatorId));
+            return IncubatorsInventory.FirstOrDefault(item => item.Id == null ? false : item.Id.Equals(egg.EggIncubatorId));
         }
 
         #endregion
